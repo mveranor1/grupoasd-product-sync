@@ -1,0 +1,108 @@
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: grupoasd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-grupoasd_db}
+      POSTGRES_USER: ${DB_USER:-grupoasd_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-grupoasd_pass}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-grupoasd_user} -d ${DB_NAME:-grupoasd_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - grupoasd-net
+
+  activemq-broker:
+    image: grupoasd-activemq:6.3.2
+    build:
+      context: .
+      dockerfile: docker/activemq/Dockerfile
+    container_name: grupoasd-activemq
+    restart: unless-stopped
+    volumes:
+      - activemq_persistent_data:/opt/activemq/data
+    ports:
+      - "${ACTIVEMQ_PORT:-61616}:61616"
+      - "127.0.0.1:${ACTIVEMQ_CONSOLE_PORT:-8161}:8161"
+    healthcheck:
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8161/); test \"$$code\" = 200 -o \"$$code\" = 401"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - grupoasd-net
+
+  product-publisher-service:
+    build:
+      context: .
+      dockerfile: product-publisher-service/Dockerfile
+    container_name: grupoasd-publisher-service
+    restart: on-failure
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      activemq-broker:
+        condition: service_healthy
+    ports:
+      - "${PUBLISHER_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8080
+      DB_URL: jdbc:postgresql://postgres-db:5432/${DB_NAME:-grupoasd_db}
+      DB_USERNAME: ${DB_USER:-grupoasd_user}
+      DB_PASSWORD: ${DB_PASSWORD:-grupoasd_pass}
+      DB_SCHEMA: grupoasd_dev
+      ACTIVEMQ_BROKER_URL: tcp://activemq-broker:61616
+      ACTIVEMQ_USER: ${ACTIVEMQ_USER:-admin}
+      ACTIVEMQ_PASSWORD: ${ACTIVEMQ_PASSWORD:-admin}
+      QUEUE_PRODUCTOS_REGISTRO: ${QUEUE_PRODUCTOS_REGISTRO:-grupoasd.productos.registro.queue}
+      QUEUE_PRODUCTOS_NOTIFICACION: ${QUEUE_PRODUCTOS_NOTIFICACION:-grupoasd.productos.notificacion.queue}
+      JOB_CRON_INTERVAL_MS: ${JOB_CRON_INTERVAL_MS:-10000}
+    networks:
+      - grupoasd-net
+
+  product-consumer-service:
+    build:
+      context: .
+      dockerfile: product-consumer-service/Dockerfile
+    container_name: grupoasd-consumer-service
+    restart: on-failure
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      activemq-broker:
+        condition: service_healthy
+    ports:
+      - "${CONSUMER_PORT:-8081}:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8081
+      DB_URL: jdbc:postgresql://postgres-db:5432/${DB_NAME:-grupoasd_db}
+      DB_USERNAME: ${DB_USER:-grupoasd_user}
+      DB_PASSWORD: ${DB_PASSWORD:-grupoasd_pass}
+      DB_SCHEMA: grupoasd_prod
+      ACTIVEMQ_BROKER_URL: tcp://activemq-broker:61616
+      ACTIVEMQ_USER: ${ACTIVEMQ_USER:-admin}
+      ACTIVEMQ_PASSWORD: ${ACTIVEMQ_PASSWORD:-admin}
+      QUEUE_PRODUCTOS_REGISTRO: ${QUEUE_PRODUCTOS_REGISTRO:-grupoasd.productos.registro.queue}
+      QUEUE_PRODUCTOS_NOTIFICACION: ${QUEUE_PRODUCTOS_NOTIFICACION:-grupoasd.productos.notificacion.queue}
+      ACTIVEMQ_MAX_REDELIVERIES: ${ACTIVEMQ_MAX_REDELIVERIES:-3}
+      ACTIVEMQ_INITIAL_REDELIVERY_DELAY: ${ACTIVEMQ_INITIAL_REDELIVERY_DELAY:-2000}
+    networks:
+      - grupoasd-net
+
+volumes:
+  postgres_data:
+  activemq_persistent_data:
+
+networks:
+  grupoasd-net:
+    driver: bridge

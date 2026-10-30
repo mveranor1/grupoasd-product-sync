@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:grupoasd_dev_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;INIT=CREATE SCHEMA IF NOT EXISTS grupoasd_dev
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        default_schema: grupoasd_dev
+        hbm2ddl:
+          create_namespaces: false
+  activemq:
+    broker-url: vm://localhost?broker.persistent=false
+
+logging:
+  file:
+    name: target/test-logs/product-publisher-test.log
+
+app:
+  messaging:
+    queues:
+      producto-registro: test.grupoasd.productos.registro.queue
+      producto-notificacion: test.grupoasd.productos.notificacion.queue
+  scheduler:
+    publicacion:
+      enabled: false
+      fixed-delay-ms: 60000
+      batch-size: 50

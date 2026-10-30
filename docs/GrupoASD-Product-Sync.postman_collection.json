@@ -1,0 +1,177 @@
+{
+  "info": {
+    "_postman_id": "a8c9d4e2-3f11-4b5a-9c88-123456789abc",
+    "name": "Grupo ASD - Sincronización de Productos (Docker)",
+    "description": "Colección de pruebas para Componente 1 (8080 - grupoasd_dev) y Componente 2 (8081 - grupoasd_prod)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Registrar Producto (POST - 201 Created)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"codigo\": \"PROD-001\",\n  \"nombre\": \"Laptop Corporativa Dell\",\n  \"descripcion\": \"Laptop Core i7 32GB RAM 1TB SSD\",\n  \"precio\": 4500000.00\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos"]
+        }
+      }
+    },
+    {
+      "name": "2. Consultar Producto en Origen (GET - Verificar publicado=true y notificado=true)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos/PROD-001",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos", "PROD-001"]
+        }
+      }
+    },
+    {
+      "name": "3. Listar Todos en Origen - grupoasd_dev (GET)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos"]
+        }
+      }
+    },
+    {
+      "name": "4. Listar Pendientes de Confirmación en Origen (GET)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos/pendientes-publicacion",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos", "pendientes-publicacion"]
+        }
+      }
+    },
+    {
+      "name": "5. Consultar Productos Sincronizados en Destino - grupoasd_prod (GET 8081)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8081/api/v1/productos-destino",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8081",
+          "path": ["api", "v1", "productos-destino"]
+        }
+      }
+    },
+    {
+      "name": "6. Consultar Producto por Código en Destino - grupoasd_prod (GET 8081)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8081/api/v1/productos-destino/PROD-001",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8081",
+          "path": ["api", "v1", "productos-destino", "PROD-001"]
+        }
+      }
+    },
+    {
+      "name": "7. Prueba Error Código Duplicado (POST - 409 Conflict)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"codigo\": \"PROD-001\",\n  \"nombre\": \"Laptop Duplicada\",\n  \"descripcion\": \"Intento de registro con el mismo código\",\n  \"precio\": 4500000.00\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos"]
+        }
+      }
+    },
+    {
+      "name": "8. Prueba Error Validación Datos Inválidos (POST - 400 Bad Request)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"codigo\": \"\",\n  \"nombre\": \"A\",\n  \"descripcion\": \"Mal\",\n  \"precio\": -500\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos"]
+        }
+      }
+    },
+    {
+      "name": "9. Ver Logs de Movimientos Componente 1 (GET 8080)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/v1/productos/logs-movimientos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "v1", "productos", "logs-movimientos"]
+        }
+      }
+    },
+    {
+      "name": "10. Ver Logs de Movimientos Componente 2 (GET 8081)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8081/api/v1/productos-destino/logs-movimientos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8081",
+          "path": ["api", "v1", "productos-destino", "logs-movimientos"]
+        }
+      }
+    }
+  ]
+}

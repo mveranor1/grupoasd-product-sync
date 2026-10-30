@@ -1,0 +1,34 @@
+{
+  "properties": [
+    {
+      "name": "app.messaging.queues.producto-registro",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola ActiveMQ de la que se consumen los mensajes de productos."
+    },
+    {
+      "name": "app.messaging.queues.producto-notificacion",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola ActiveMQ hacia la cual se envía la confirmación de persistencia."
+    },
+    {
+      "name": "app.messaging.redelivery.maximum-redeliveries",
+      "type": "java.lang.Integer",
+      "description": "Número máximo de reintentos de entrega antes de enviar el mensaje a DLQ."
+    },
+    {
+      "name": "app.messaging.redelivery.initial-redelivery-delay-ms",
+      "type": "java.lang.Long",
+      "description": "Retardo inicial en milisegundos para el primer reintento."
+    },
+    {
+      "name": "app.messaging.redelivery.backoff-multiplier",
+      "type": "java.lang.Double",
+      "description": "Multiplicador de backoff exponencial entre reintentos."
+    },
+    {
+      "name": "app.messaging.redelivery.use-exponential-backoff",
+      "type": "java.lang.Boolean",
+      "description": "Indica si se utiliza backoff exponencial en los reintentos."
+    }
+  ]
+}

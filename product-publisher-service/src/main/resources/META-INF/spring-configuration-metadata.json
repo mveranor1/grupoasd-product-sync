@@ -1,0 +1,34 @@
+{
+  "properties": [
+    {
+      "name": "app.messaging.queues.producto-registro",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola ActiveMQ para publicar el registro de productos."
+    },
+    {
+      "name": "app.messaging.queues.producto-notificacion",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola ActiveMQ para recibir notificaciones de confirmación desde grupoasd_prod."
+    },
+    {
+      "name": "app.scheduler.publicacion.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Habilita o deshabilita el Job programado de publicación de productos."
+    },
+    {
+      "name": "app.scheduler.publicacion.fixed-delay-ms",
+      "type": "java.lang.Long",
+      "description": "Intervalo en milisegundos entre ejecuciones del Job de publicación."
+    },
+    {
+      "name": "app.scheduler.publicacion.initial-delay-ms",
+      "type": "java.lang.Long",
+      "description": "Retardo inicial en milisegundos antes de la primera ejecución del Job."
+    },
+    {
+      "name": "app.scheduler.publicacion.batch-size",
+      "type": "java.lang.Integer",
+      "description": "Tamaño máximo del lote de productos pendientes a procesar por ciclo."
+    }
+  ]
+}

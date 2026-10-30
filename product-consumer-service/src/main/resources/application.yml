@@ -1,0 +1,58 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: product-consumer-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/grupoasd_db}
+    username: ${DB_USERNAME:grupoasd_user}
+    password: ${DB_PASSWORD:grupoasd_pass}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+
+  jpa:
+    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:false}
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        default_schema: ${DB_SCHEMA:grupoasd_prod}
+        hbm2ddl:
+          create_namespaces: true
+        format_sql: true
+
+  activemq:
+    broker-url: ${ACTIVEMQ_BROKER_URL:tcp://localhost:61616}
+    user: ${ACTIVEMQ_USER:admin}
+    password: ${ACTIVEMQ_PASSWORD:admin}
+    packages:
+      trust-all: true
+
+app:
+  messaging:
+    queues:
+      producto-registro: ${QUEUE_PRODUCTOS_REGISTRO:grupoasd.productos.registro.queue}
+      producto-notificacion: ${QUEUE_PRODUCTOS_NOTIFICACION:grupoasd.productos.notificacion.queue}
+    redelivery:
+      maximum-redeliveries: ${ACTIVEMQ_MAX_REDELIVERIES:3}
+      initial-redelivery-delay-ms: ${ACTIVEMQ_INITIAL_REDELIVERY_DELAY:2000}
+      backoff-multiplier: ${ACTIVEMQ_BACKOFF_MULTIPLIER:2.0}
+      use-exponential-backoff: ${ACTIVEMQ_USE_EXPONENTIAL_BACKOFF:true}
+
+logging:
+  file:
+    name: ${LOG_FILE:logs/product-consumer-service.log}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%level] [COMPONENTE-2] - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%level] [COMPONENTE-2] - %msg%n"
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+  level:
+    root: INFO
+    com.grupoasd.consumer: INFO

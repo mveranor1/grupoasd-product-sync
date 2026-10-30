@@ -1,0 +1,56 @@
+flowchart TB
+    subgraph Cliente["Cliente HTTP (Postman / Swagger UI / cURL)"]
+        API_CLIENT["Cliente REST"]
+    end
+
+    subgraph Comp1["Componente 1: product-publisher-service (Puerto 8080)"]
+        CTRL1["ProductoController\nPOST / GET /api/v1/productos"]
+        SVC1["ProductoService / ProductoServiceImpl"]
+        JOB["ProductoPublicacionJob\n(@Scheduled configurable)"]
+        PUB1["ProductoJmsPublisher"]
+        LIST1["ProductoNotificacionListener\n(@JmsListener)"]
+        REPO1["ProductoRepository (JPA)"]
+    end
+
+    subgraph Broker["Apache ActiveMQ Classic (Puerto 61616 / Consola Web 8161)"]
+        Q_REG[["Cola 1: grupoasd.productos.registro.queue\n(1 mensaje JSON por producto)"]]
+        Q_NOTIF[["Cola 2: grupoasd.productos.notificacion.queue\n(Confirmación de persistencia)"]]
+        Q_DLQ[["Dead Letter Queue: ActiveMQ.DLQ"]]
+    end
+
+    subgraph Comp2["Componente 2: product-consumer-service (Puerto 8081)"]
+        LIST2["ProductoConsumerListener\n(@JmsListener - SESSION_TRANSACTED)"]
+        SVC2["ProductoSincronizacionService / ProductoSincronizacionServiceImpl"]
+        PUB2["NotificacionJmsPublisher"]
+        CTRL2["ProductoDestinoController\nGET /api/v1/productos-destino"]
+        REPO2["ProductoDestinoRepository (JPA)"]
+    end
+
+    subgraph Database["PostgreSQL 16 (Base de datos: grupoasd_db)"]
+        DB_DEV[("Esquema: grupoasd_dev\nTabla: producto\n(publicado, notificado)")]
+        DB_PROD[("Esquema: grupoasd_prod\nTabla: producto")]
+    end
+
+    API_CLIENT -->|"1. POST /api/v1/productos"| CTRL1
+    CTRL1 --> SVC1
+    SVC1 -->|"2. Persiste con publicado=false, notificado=false"| REPO1
+    REPO1 --> DB_DEV
+
+    JOB -->|"3. Consulta pendientes cada N ms"| SVC1
+    JOB -->|"4. Construye ProductoEventMessage"| PUB1
+    PUB1 -->|"5. Publica mensaje en ActiveMQ"| Q_REG
+    JOB -->|"6. Actualiza publicado=true"| SVC1
+
+    Q_REG -->|"7. Consume mensaje automáticamente"| LIST2
+    LIST2 -->|"8. Valida datos del mensaje"| SVC2
+    SVC2 -->|"9. Verifica duplicado y persiste"| REPO2
+    REPO2 --> DB_PROD
+    SVC2 -->|"10. Publica confirmación"| PUB2
+    PUB2 -->|"11. Encola ProductoNotificacionMessage"| Q_NOTIF
+    LIST2 -.->|"Fallo tras agotar reintentos"| Q_DLQ
+
+    Q_NOTIF -->|"12. Consume confirmación"| LIST1
+    LIST1 -->|"13. Actualiza notificado=true en grupoasd_dev"| SVC1
+
+    API_CLIENT -->|"14. Consulta productos sincronizados"| CTRL2
+    CTRL2 --> SVC2

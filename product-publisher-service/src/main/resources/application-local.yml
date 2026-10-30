@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:h2:file:~/grupoasd_local_db;AUTO_SERVER=TRUE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;INIT=CREATE SCHEMA IF NOT EXISTS grupoasd_dev\;CREATE SCHEMA IF NOT EXISTS grupoasd_prod
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: grupoasd_dev
+  activemq:
+    broker-url: tcp://localhost:61616
+    user: admin
+    password: admin
