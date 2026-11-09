@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -55,6 +56,7 @@ class ProductoConcurrencyPostgresTest {
             registry.add("spring.datasource.password",
                     () -> System.getenv().getOrDefault("CONCURRENCY_TEST_DB_PASSWORD", "grupoasd_pass"));
             registry.add("spring.jpa.hibernate.ddl-auto", () -> "update");
+            registry.add("spring.jpa.properties.hibernate.hbm2ddl.create_namespaces", () -> "true");
             registry.add("spring.jpa.properties.hibernate.default_schema", () -> "grupoasd_prod");
             registry.add("spring.activemq.broker-url", () ->
                     System.getenv().getOrDefault("CONCURRENCY_TEST_BROKER_URL",
@@ -68,12 +70,16 @@ class ProductoConcurrencyPostgresTest {
     @MockitoSpyBean
     private ProductoDestinoRepository repositorio;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void preparar() {
         assumeTrue(TEST_DB_URL != null && !TEST_DB_URL.isBlank(),
                 "Esta prueba requiere CONCURRENCY_TEST_DB_URL; no se ejecuta contra H2");
         assertThat(TEST_DB_URL).contains("grupoasd_test_db");
-        repositorio.deleteAll();
+        // Borra únicamente el producto de esta prueba, sin afectar otras filas de test.
+        jdbcTemplate.update("DELETE FROM grupoasd_prod.producto WHERE codigo = ?", CODIGO);
     }
 
     @Test
@@ -111,6 +117,9 @@ class ProductoConcurrencyPostgresTest {
         }
 
         assertThat(repositorio.findByCodigoIgnoreCase(CODIGO)).isPresent();
-        assertThat(repositorio.count()).isEqualTo(1L);
+        Long filas = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM grupoasd_prod.producto WHERE codigo = ?",
+                Long.class, CODIGO);
+        assertThat(filas).isEqualTo(1L);
     }
 }
