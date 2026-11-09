@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -85,7 +87,21 @@ public class ProductoSincronizacionServiceImpl implements ProductoSincronizacion
                 productoPersistido.getFechaSincronizacion()
         );
 
-        notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+        // La notificación solo debe salir después de confirmar la transacción de BD.
+        // Si falla JMS tras el commit, el listener JMS puede reentregar el mensaje;
+        // el consumidor idempotente responderá con una nueva confirmación.
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+                && TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+                }
+            });
+        } else {
+            // Mantiene compatibilidad con pruebas unitarias que invocan el servicio sin Spring.
+            notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+        }
 
         return productoPersistido;
     }
