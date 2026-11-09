@@ -13,6 +13,7 @@ Solución de software compuesta por **dos aplicaciones independientes en Java 25
 5. [Requerimientos Técnicos, Clean Code y Estructura del Proyecto](#5-requerimientos-técnicos-clean-code-y-estructura-del-proyecto)
 6. [Instrucciones de Instalación, Configuración y Ejecución](#6-instrucciones-de-instalación-configuración-y-ejecución)
 7. [Pruebas Automatizadas y Evidencias](#7-pruebas-automatizadas-y-evidencias)
+8. [Validación adicional de noviembre de 2026](#8-validación-adicional-de-noviembre-de-2026)
 
 ---
 
@@ -21,7 +22,7 @@ Solución de software compuesta por **dos aplicaciones independientes en Java 25
 La solución implementa dos microservicios desacoplados que se comunican de forma asíncrona a través de **Apache ActiveMQ Classic** y persisten datos en **PostgreSQL** utilizando **Spring Data JPA / Hibernate**:
 
 - **Componente 1 (`product-publisher-service` — Puerto `8080`):** Expone la API REST para registrar y consultar productos en el esquema **`grupoasd_dev`**, ejecuta periódicamente el Job programado que identifica los productos pendientes (`publicado = false`), publica un mensaje JSON individual por cada producto en ActiveMQ y escucha la cola de confirmación para marcar **`notificado = true`**.
-- **Componente 2 (`product-consumer-service` — Puerto `8081`):** Permanece suscrito a la cola de ActiveMQ, valida la estructura y los datos de cada mensaje recibido, persiste el producto en el esquema **`grupoasd_prod`** garantizando idempotencia (cero duplicados) y envía la confirmación de persistencia hacia el Componente 1.
+- **Componente 2 (`product-consumer-service` — Puerto `8081`):** Permanece suscrito a la cola de ActiveMQ, valida la estructura y los datos de cada mensaje recibido, persiste el producto en el esquema **`grupoasd_prod`** aplicando idempotencia y restricción de unicidad y envía la confirmación de persistencia hacia el Componente 1.
 
 ---
 
@@ -102,7 +103,7 @@ flowchart TB
 3. El Job programado (`@Scheduled`) identifica el producto pendiente de publicación.
 4. El Componente 1 publica en `grupoasd.productos.registro.queue` un mensaje JSON con toda la información del producto y actualiza `publicado = true`.
 5. El Componente 2 (`8081`), suscrito a la cola, consume el mensaje automáticamente, valida sus atributos y verifica que el código no exista en `grupoasd_prod.producto`.
-6. El Componente 2 persiste el producto en `grupoasd_prod.producto`, confirma la transacción JMS (`ACK`) y publica un mensaje de confirmación en `grupoasd.productos.notificacion.queue`.
+6. El Componente 2 persiste el producto en `grupoasd_prod.producto`; tras el commit de PostgreSQL, envía un mensaje de confirmación a `grupoasd.productos.notificacion.queue`. Si el procesamiento finaliza correctamente, la sesión JMS confirma la recepción del mensaje (`ACK`).
 7. El Componente 1 recibe la confirmación y actualiza `notificado = true` y `fecha_notificacion` en `grupoasd_dev.producto`.
 
 ---
@@ -153,7 +154,7 @@ flowchart TB
    - **Auto-recuperación (`reconciliarProductosSinConfirmacionEnDestino`):** Si un producto lleva más de 20 segundos con `publicado = true` y `notificado = false` (por ejemplo, tras una caída temporal del Componente 2), el Job lo reenvía automáticamente a ActiveMQ hasta que sea confirmado.
 2. **Prevención de duplicados (Idempotencia):**
    - **En origen (`grupoasd_dev`):** Se valida `existsByCodigoIgnoreCase` en la capa de servicio (retornando `409 Conflict`) y se refuerza con la restricción `UNIQUE (codigo)` (`uk_producto_dev_codigo`) en PostgreSQL.
-   - **En destino (`grupoasd_prod`):** Antes de insertar un producto consumido desde ActiveMQ, `ProductoSincronizacionServiceImpl` verifica `findByCodigoIgnoreCase`. Si el producto ya existe ante la recepción repetida de un mensaje, omite el `INSERT`, registra `[RESULTADO: DUPLICADO OMITIDO]` en el log y reenvía la confirmación para garantizar consistencia.
+   - **En destino (`grupoasd_prod`):** Antes de insertar un producto consumido desde ActiveMQ, `ProductoSincronizacionServiceImpl` verifica `findByCodigoIgnoreCase`. Si el producto ya existe, omite el `INSERT` y reenvía la confirmación. Ante una colisión real por `UNIQUE (codigo)`, la operación fallida se revierte; el siguiente intento JMS reconoce el registro existente. No se consulta dentro de la transacción abortada.
 3. **Manejo de errores, Reintentos y Dead Letter Queue (`ActiveMQ.DLQ`):**
    - **Fallos en publicación (Componente 1):** Si ActiveMQ no está disponible durante la ejecución del Job, se captura la excepción, se mantiene `publicado = false`, se incrementa `intentos_publicacion` y se guarda el motivo en `ultimo_error_publicacion` para reintentar en el próximo ciclo.
    - **Fallos en consumo o mensajes inválidos (Componente 2):** El listener JMS opera con sesión transaccional (`Session.SESSION_TRANSACTED`). Si un mensaje tiene datos inválidos o falla la base de datos, se lanza excepción haciendo rollback del ACK y activando la `RedeliveryPolicy` con backoff exponencial (`maximumRedeliveries = 3`, `initialRedeliveryDelay = 2000 ms`, `multiplier = 2.0`). Al agotar los reintentos, ActiveMQ mueve automáticamente el mensaje a la cola **`ActiveMQ.DLQ`**.
@@ -244,7 +245,7 @@ mvn -pl product-consumer-service spring-boot:run
 ```bash
 mvn clean verify
 ```
-Las pruebas de integración y de flujo completo utilizan la base de datos aislada `grupoasd_test_db` en PostgreSQL 16 (con esquemas separados `grupoasd_dev` y `grupoasd_prod`) y un broker ActiveMQ Classic 6.3.2 real con colas aisladas de prueba y soporte de `ActiveMQ.DLQ`.
+Las pruebas utilizan perfiles y recursos aislados: el perfil `test` configura H2 y un broker ActiveMQ embebido; algunas pruebas detectan una base PostgreSQL de pruebas disponible. Las dos pruebas adicionales de carrera requieren expresamente `grupoasd_test_db` por medio de `CONCURRENCY_TEST_DB_URL`, y se omiten en la ejecución habitual sin esa variable. No se deben confundir resultados históricos de octubre con los del 9 de noviembre.
 
 #### A. Pruebas Unitarias Puras (`@ExtendWith(MockitoExtension.class)` — 15 Tests)
 Evalúan la lógica de negocio, validaciones y transiciones de estado **en aislamiento total** con JUnit 5 y Mockito (`@Mock`, `@InjectMocks`), sin levantar contexto de Spring ni base de datos:
@@ -303,3 +304,53 @@ Ejecutan el ciclo completo extremo a extremo conectando `grupoasd_dev.producto` 
 - **Diagrama de arquitectura en Mermaid y PNG:** [`docs/arquitectura.mmd`](docs/arquitectura.mmd) y [`docs/evidencias/diagrama-arquitectura.png`](docs/evidencias/diagrama-arquitectura.png)
 - **Colección de Postman lista para importar:** [`docs/GrupoASD-Product-Sync.postman_collection.json`](docs/GrupoASD-Product-Sync.postman_collection.json)
 - **Informe ejecutivo completo (7 entregables + 14 capturas de evidencia):** **`DOCUMENTACION_SOLUCION.docx`** y **`DOCUMENTACION_SOLUCION.pdf`**.
+
+---
+
+## 8. Validación adicional de noviembre de 2026
+
+Se añadieron correcciones en la rama `fix/confirmaciones-y-consistencia-jms`, sin integrarlas todavía a `main`: comprobación cruzada de `codigo` e `idOrigen` en las confirmaciones, protección frente a confirmaciones negativas tardías, publicación de confirmación JMS después del commit de PostgreSQL, y rollback ante una colisión `UNIQUE`.
+
+### 8.1. Evidencia de funcionamiento real (9 de noviembre de 2026)
+
+- `docker compose build`: compilación de tres imágenes finalizada correctamente, tras corregir referencias de Dockerfiles.
+- `docker compose ps`: cuatro contenedores activos; PostgreSQL y ActiveMQ reportados como `healthy`.
+- API de origen, `GET /api/v1/productos/PROD-TEST-2026-002`: HTTP `200`, `id=4`, `publicado=true`, `notificado=true`, `intentosPublicacion=1`.
+- API de destino, `GET /api/v1/productos-destino/PROD-TEST-2026-002`: HTTP `200`, `id=36`, `idOrigen=4`, mismo `codigo`, nombre y precio.
+- Registro de código duplicado: HTTP `409 Conflict`, respuesta `Código de Producto Duplicado`.
+
+### 8.2. Pruebas ejecutadas desde Docker y Maven
+
+Para ejecutar la suite habitual desde Windows CMD, dentro del directorio raíz:
+
+```cmd
+docker run --rm -v "%cd%:/app" -w /app maven:3.10.0-eclipse-temurin-25-alpine mvn clean verify
+```
+
+Resultado comunicado el **9 de noviembre de 2026, 20:07:11 UTC**: `BUILD SUCCESS`; padre, publicador y consumidor con estado `SUCCESS`. El consumidor reportó `Tests run: 13, Failures: 0, Errors: 0, Skipped: 1`. La omisión corresponde a la prueba PostgreSQL especial al no suministrar su variable de entorno. El fragmento aportado no contiene el conteo exacto del publicador, por lo que no se atribuye una cifra total de pruebas a esa ejecución.
+
+Para ejecutar la prueba específica de colisión concurrente contra PostgreSQL **de pruebas**:
+
+```cmd
+docker run --rm -e CONCURRENCY_TEST_DB_URL=jdbc:postgresql://host.docker.internal:5432/grupoasd_test_db?currentSchema=grupoasd_prod -v "%cd%:/app" -w /app maven:3.10.0-eclipse-temurin-25-alpine mvn -pl product-consumer-service -Dtest=ProductoConcurrencyPostgresTest test
+```
+
+**Resultado comunicado:** `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, 9 de noviembre de 2026 a las 20:02:36 UTC. Se forzaron dos inserciones concurrentes del código `PROD-CONCURRENT-REAL-01`: una persistió, la otra obtuvo `SQLSTATE 23505`; la operación repetida en una transacción nueva encontró el producto existente. Se verificó una sola fila.
+
+Para ejecutar la prueba con **dos consumidores JMS concurrentes** y broker embebido de pruebas:
+
+```cmd
+docker run --rm -e CONCURRENCY_TEST_DB_URL=jdbc:postgresql://host.docker.internal:5432/grupoasd_test_db?currentSchema=grupoasd_prod -v "%cd%:/app" -w /app maven:3.10.0-eclipse-temurin-25-alpine mvn -pl product-consumer-service -Dtest=ProductoConcurrentJmsPostgresTest test
+```
+
+**Resultado comunicado:** `BUILD SUCCESS`, 9 de noviembre de 2026 a las 20:20:15 UTC. La prueba define `app.messaging.listener.concurrency=2-2` y `queue-prefetch=1`, utiliza una cola aislada, verifica dos notificaciones de persistencia con el mismo `idDestino` y una fila en PostgreSQL. No se aportó la línea individual `Tests run` de esa última ejecución; conservarla como evidencia adicional sería conveniente.
+
+**Aclaración:** el `BUILD SUCCESS` del test especial significa que se completaron sus aserciones, no que se hayan comprobado todos los escenarios de caída del proceso. Una interrupción definitiva entre el commit en PostgreSQL y el envío de la notificación JMS **no** queda garantizada únicamente por `afterCommit()`; para protección fuerte se necesitaría un outbox transaccional o reconciliación persistente de confirmaciones.
+
+### 8.3. Evidencias y entrega
+
+- Evidencias y resultados anteriores (28 de octubre): [`docs/evidencias/RESULTADOS_PRUEBAS.md`](docs/evidencias/RESULTADOS_PRUEBAS.md).
+- Nuevos resultados y observaciones (9 de noviembre): [`docs/evidencias/VALIDACION_2026-11-09.md`](docs/evidencias/VALIDACION_2026-11-09.md).
+- Explicación técnica actualizada: [`docs/explicacion_tecnica.md`](docs/explicacion_tecnica.md).
+- Los informes en PDF y Word existentes reflejan una versión anterior y requieren actualización antes de presentarlos como documentación de las correcciones de noviembre.
+- **Revisión en equipo:** [Pull Request #1](https://github.com/mveranor1/grupoasd-product-sync/pull/1), todavía en borrador y sin fusionar a `main`.
