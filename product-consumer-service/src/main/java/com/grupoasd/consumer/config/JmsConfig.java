@@ -58,6 +58,9 @@ public class JmsConfig {
     @Value("${app.messaging.redelivery.use-exponential-backoff:true}")
     private boolean useExponentialBackoff;
 
+    @Value("${app.messaging.listener.concurrency:1-1}")
+    private String listenerConcurrency;
+
     @Bean
     public RedeliveryPolicy activeMqRedeliveryPolicy() {
         RedeliveryPolicy policy = new RedeliveryPolicy();
@@ -107,6 +110,7 @@ public class JmsConfig {
         DefaultJmsListenerContainerFactory factory = new DefaultJmsListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(jacksonJmsMessageConverter);
+        factory.setConcurrency(listenerConcurrency);
         factory.setSessionTransacted(true);
         factory.setSessionAcknowledgeMode(Session.SESSION_TRANSACTED);
         factory.setErrorHandler(t ->
