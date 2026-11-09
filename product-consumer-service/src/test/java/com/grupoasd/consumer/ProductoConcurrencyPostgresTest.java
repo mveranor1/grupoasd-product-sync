@@ -1,8 +1,10 @@
 package com.grupoasd.consumer;
 
+import com.grupoasd.consumer.domain.entity.ProductoDestino;
 import com.grupoasd.consumer.dto.message.ProductoEventMessage;
 import com.grupoasd.consumer.repository.ProductoDestinoRepository;
 import com.grupoasd.consumer.service.ProductoSincronizacionService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +75,9 @@ class ProductoConcurrencyPostgresTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private EntityManager entityManager;
+
     @BeforeEach
     void preparar() {
         assumeTrue(TEST_DB_URL != null && !TEST_DB_URL.isBlank(),
@@ -86,8 +91,16 @@ class ProductoConcurrencyPostgresTest {
     void dosTransaccionesConcurrentesNoDebenDuplicarNiFallar() throws Exception {
         CountDownLatch ambasConsultaron = new CountDownLatch(2);
         doAnswer(invocation -> {
-            Object result = invocation.callRealMethod();
-            if (result instanceof Optional<?> opt && opt.isEmpty()) {
+            // Los métodos de consulta de Spring Data son abstractos; Mockito no puede
+            // ejecutar invocation.callRealMethod() sobre la interfaz del repositorio.
+            // Usamos EntityManager para ejecutar una consulta JPA real contra PostgreSQL.
+            Optional<ProductoDestino> result = entityManager.createQuery(
+                            "SELECT p FROM ProductoDestino p WHERE UPPER(p.codigo) = :codigo",
+                            ProductoDestino.class)
+                    .setParameter("codigo", CODIGO)
+                    .getResultStream()
+                    .findFirst();
+            if (result.isEmpty()) {
                 ambasConsultaron.countDown();
                 if (!ambasConsultaron.await(8, TimeUnit.SECONDS)) {
                     throw new AssertionError("No se alcanzaron dos consultas concurrentes");
