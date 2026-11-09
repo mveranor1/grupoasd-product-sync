@@ -61,6 +61,9 @@ public class JmsConfig {
     @Value("${app.messaging.listener.concurrency:1-1}")
     private String listenerConcurrency;
 
+    @Value("${app.messaging.listener.queue-prefetch:1000}")
+    private int queuePrefetch;
+
     @Bean
     public RedeliveryPolicy activeMqRedeliveryPolicy() {
         RedeliveryPolicy policy = new RedeliveryPolicy();
@@ -77,6 +80,7 @@ public class JmsConfig {
         ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerUser, brokerPassword, brokerUrl);
         factory.setTrustedPackages(List.of("com.grupoasd", "java.util", "java.lang", "java.math", "java.time"));
         factory.setRedeliveryPolicy(activeMqRedeliveryPolicy);
+        factory.getPrefetchPolicy().setQueuePrefetch(queuePrefetch);
         return factory;
     }
 
