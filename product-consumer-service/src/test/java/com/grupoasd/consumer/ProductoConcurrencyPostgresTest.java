@@ -99,7 +99,9 @@ class ProductoConcurrencyPostgresTest {
                             "SELECT p FROM ProductoDestino p WHERE UPPER(p.codigo) = :codigo",
                             ProductoDestino.class)
                     .setParameter("codigo", CODIGO)
-                    .getResultStream()
+                    .setMaxResults(1)
+                    .getResultList()
+                    .stream()
                     .findFirst();
             if (result.isEmpty()) {
                 ambasConsultaron.countDown();
@@ -146,7 +148,6 @@ class ProductoConcurrencyPostgresTest {
             assertThat(servicio.sincronizarProducto(mensaje).getId()).isEqualTo(idGanador);
         }
 
-        assertThat(repositorio.findByCodigoIgnoreCase(CODIGO)).isPresent();
         Long filas = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM grupoasd_prod.producto WHERE codigo = ?",
                 Long.class, CODIGO);
