@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,9 +125,25 @@ class ProductoConcurrencyPostgresTest {
             var segundo = ejecutor.submit(llamada);
             inicio.countDown();
 
-            Long idPrimero = primero.get(20, TimeUnit.SECONDS);
-            Long idSegundo = segundo.get(20, TimeUnit.SECONDS);
-            assertThat(idPrimero).isEqualTo(idSegundo);
+            // La restricción UNIQUE deja ganar a una transacción y hace fallar la
+            // otra. Eso es esperado: el listener JMS hará rollback y reentrega.
+            Long idGanador = null;
+            int errores = 0;
+            for (var futuro : java.util.List.of(primero, segundo)) {
+                try {
+                    Long id = futuro.get(20, TimeUnit.SECONDS);
+                    assertThat(idGanador).isNull();
+                    idGanador = id;
+                } catch (ExecutionException ex) {
+                    errores++;
+                    assertThat(ex.getCause()).isInstanceOf(
+                            org.springframework.dao.DataIntegrityViolationException.class);
+                }
+            }
+            assertThat(idGanador).isNotNull();
+            assertThat(errores).isEqualTo(1);
+            // Simula la reentrega JMS, ahora con una nueva transacción JPA.
+            assertThat(servicio.sincronizarProducto(mensaje).getId()).isEqualTo(idGanador);
         }
 
         assertThat(repositorio.findByCodigoIgnoreCase(CODIGO)).isPresent();
