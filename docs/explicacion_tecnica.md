@@ -35,7 +35,7 @@ En el esquema de origen (`grupoasd_dev.producto`), la solución modela de forma 
    - Dado que ActiveMQ opera bajo semántica *At-Least-Once Delivery* (y el Job puede reenviar productos no confirmados), `ProductoSincronizacionServiceImpl.sincronizarProducto(...)` verifica primero `findByCodigoIgnoreCase(codigoNormalizado)`:
      - **Si no existe:** inserta el nuevo `ProductoDestino` en `grupoasd_prod.producto`.
      - **Si ya existe:** omite el `INSERT`, registra `[RESULTADO: DUPLICADO OMITIDO]` y reutiliza la entidad existente para reenviar la confirmación hacia el Componente 1.
-   - **Protección ante Concurrencia:** La tabla `grupoasd_prod.producto` cuenta con la restricción `uk_producto_prod_codigo UNIQUE (codigo)`. Si dos hilos intentan insertar simultáneamente el mismo código, el bloque `catch (DataIntegrityViolationException)` recupera el registro recién insertado y envía la confirmación sin fallar la transacción.
+   - **Protección ante concurrencia:** La restricción `UNIQUE (codigo)` impide que dos transacciones inserten el mismo código. Si PostgreSQL rechaza una inserción concurrente (`SQLSTATE 23505`), **la excepción se propaga**; Spring revierte esa transacción y la sesión JMS puede reentregar el mensaje. En el siguiente procesamiento, la consulta inicial encuentra el registro que ganó la carrera, omite un nuevo `INSERT` y genera la confirmación idempotente. **No se consulta el repositorio dentro de la transacción abortada.**
 3. **En la Recepción de Confirmaciones (`ProductoServiceImpl`):**
    - Si llega una confirmación repetida para un producto que ya tiene `notificado = true`, se ignora de forma segura conservando su `fecha_notificacion` original.
 
@@ -55,3 +55,13 @@ En el esquema de origen (`grupoasd_dev.producto`), la solución modela de forma 
      - `initialRedeliveryDelay = 2000 ms`.
      - `backOffMultiplier = 2.0` y `useExponentialBackOff = true` (esperas de 2s, 4s y 8s).
    - Al agotarse los reintentos configurados, ActiveMQ transfiere automáticamente el mensaje fallido a la cola **`ActiveMQ.DLQ`**, aislando el mensaje defectuoso sin bloquear el procesamiento de los demás productos.
+
+---
+
+## 5. Confirmación después del commit, alcance y riesgo residual (noviembre de 2026)
+
+- `ProductoSincronizacionServiceImpl` registra un `TransactionSynchronization.afterCommit()` para publicar `ProductoNotificacionMessage` **solo después** de confirmar la transacción de PostgreSQL; durante la ejecución sin transacción Spring (ciertas pruebas unitarias) usa un envío directo.
+- `JmsConfig` admite `app.messaging.listener.concurrency` (predeterminado `1-1`) y `app.messaging.listener.queue-prefetch` (predeterminado `1000`). La prueba aislada de concurrencia JMS fija `2-2` y `1`, respectivamente; **la ejecución normal no se cambia a dos consumidores por defecto**.
+- Las colisiones `UNIQUE` pueden generar logs `ERROR` esperados en pruebas de carrera; lo importante es el rollback, la reentrega y la ausencia de filas duplicadas.
+- **Riesgo residual:** una caída del proceso después del commit de PostgreSQL y antes de enviar la notificación JMS aún deja una ventana de pérdida de confirmación. `afterCommit()` no es una transacción distribuida. Una solución de mayor garantía requeriría outbox transaccional o un mecanismo persistente de reconciliación de confirmaciones; no se afirma que ese escenario esté completamente resuelto.
+- Las pruebas especiales con PostgreSQL real usan `grupoasd_test_db`, no `grupoasd_db`; la concurrencia JMS se probó con un broker ActiveMQ embebido en la JVM de pruebas y colas independientes de la aplicación.
