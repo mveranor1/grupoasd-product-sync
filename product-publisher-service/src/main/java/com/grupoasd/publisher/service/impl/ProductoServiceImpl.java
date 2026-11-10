@@ -131,18 +131,26 @@ public class ProductoServiceImpl implements ProductoService {
 
         String codigoNormalizado = normalizarCodigo(notificacion.getCodigo());
         Optional<Producto> optionalProducto = productoRepository.findByCodigoIgnoreCase(codigoNormalizado);
-
         if (optionalProducto.isEmpty() && notificacion.getIdOrigen() != null) {
             optionalProducto = productoRepository.findById(notificacion.getIdOrigen());
         }
 
+        // La confirmación debe identificar unívocamente al producto por código e ID.
+        // Nunca se acepta una coincidencia solo por ID cuando el código es diferente.
+        if (optionalProducto.isPresent()) {
+            Producto encontrado = optionalProducto.get();
+            if (!encontrado.getCodigo().equalsIgnoreCase(codigoNormalizado)
+                    || (notificacion.getIdOrigen() != null
+                        && !notificacion.getIdOrigen().equals(encontrado.getId()))) {
+                throw new IllegalArgumentException(
+                        "Confirmación JMS inconsistente: el código y el idOrigen no corresponden al mismo producto");
+            }
+        }
+
         if (!notificacion.isPersistido()) {
-            optionalProducto.ifPresent(producto -> {
-                producto.setNotificado(false);
-                producto.setFechaNotificacion(null);
-                productoRepository.save(producto);
-            });
-            log.warn("[COMPONENTE 1][RECHAZO EN COLA DESTINO] El Componente 2 RECHAZÓ el producto codigo='{}'. Se mantiene/actualiza notificado=false en grupoasd_dev (no quedó guardado en grupoasd_prod).",
+            // Una notificación negativa tardía no puede deshacer una confirmación exitosa.
+            log.warn("[COMPONENTE 1][CONFIRMACION NEGATIVA] Se recibió persistido=false para codigo='{}'. "
+                            + "No se modifica el estado: los reintentos/reconciliación gestionarán los pendientes.",
                     codigoNormalizado);
             return;
         }

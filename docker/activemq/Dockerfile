@@ -13,7 +13,7 @@ RUN apk add --no-cache curl \
     && addgroup -S activemq \
     && adduser -S -G activemq activemq \
     && mkdir -p "${ACTIVEMQ_HOME}" "${ACTIVEMQ_DATA}" "${ACTIVEMQ_HOME}/tmp" \
-    && curl -fsSL "https://downloads.apache.org/activemq/${ACTIVEMQ_VERSION}/apache-activemq-${ACTIVEMQ_VERSION}-bin.tar.gz" -o /tmp/activemq.tar.gz \
+    && curl -fsSL "https://archive.apache.org/dist/activemq/${ACTIVEMQ_VERSION}/apache-activemq-${ACTIVEMQ_VERSION}-bin.tar.gz" -o /tmp/activemq.tar.gz \
     && echo "${ACTIVEMQ_SHA512}  /tmp/activemq.tar.gz" | sha512sum -c - \
     && tar -xzf /tmp/activemq.tar.gz --strip-components=1 -C "${ACTIVEMQ_HOME}" \
     && awk 'index($0, "<Item>::1</Item>") { print; print "              <Item>172.16.0.0/12</Item>"; next } { print }' "${ACTIVEMQ_CONF}/jetty/jetty-security.xml" > /tmp/jetty-security.xml \

@@ -322,6 +322,50 @@ class ProductoServiceUnitTest {
     }
 
     @Test
+    @DisplayName("No debe aceptar una confirmación si el idOrigen pertenece a otro producto")
+    void debeRechazarConfirmacionConIdentidadInconsistente() {
+        Producto otroProducto = new Producto(
+                "PROD-OTRO-01", "Monitor", "Monitor de oficina",
+                new BigDecimal("750000.00"));
+        otroProducto.setId(51L);
+
+        when(productoRepository.findByCodigoIgnoreCase("PROD-ERRONEO-01"))
+                .thenReturn(Optional.empty());
+        when(productoRepository.findById(51L)).thenReturn(Optional.of(otroProducto));
+
+        ProductoNotificacionMessage confirmacion = new ProductoNotificacionMessage(
+                51L, 70L, "PROD-ERRONEO-01", true, LocalDateTime.now());
+
+        assertThatThrownBy(() -> productoService.procesarConfirmacionDePersistencia(confirmacion))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("inconsistente");
+        assertThat(otroProducto.isNotificado()).isFalse();
+        verify(productoRepository, never()).save(any(Producto.class));
+    }
+
+    @Test
+    @DisplayName("No debe deshacer una confirmación exitosa cuando llega persistido=false tarde")
+    void noDebeRevertirConfirmacionExitosaPorNotificacionNegativaTardia() {
+        Producto confirmado = new Producto(
+                "PROD-CONFIRMADO-01", "Monitor", "Monitor de oficina",
+                new BigDecimal("750000.00"));
+        confirmado.setId(52L);
+        LocalDateTime fechaOriginal = LocalDateTime.now().minusMinutes(2);
+        confirmado.marcarComoNotificado(fechaOriginal);
+
+        when(productoRepository.findByCodigoIgnoreCase("PROD-CONFIRMADO-01"))
+                .thenReturn(Optional.of(confirmado));
+        ProductoNotificacionMessage negativa = new ProductoNotificacionMessage(
+                52L, 71L, "PROD-CONFIRMADO-01", false, LocalDateTime.now());
+
+        productoService.procesarConfirmacionDePersistencia(negativa);
+
+        assertThat(confirmado.isNotificado()).isTrue();
+        assertThat(confirmado.getFechaNotificacion()).isEqualTo(fechaOriginal);
+        verify(productoRepository, never()).save(any(Producto.class));
+    }
+
+    @Test
     @DisplayName("9. Debe lanzar ProductoNoEncontradoException cuando se consulta un código inexistente")
     void debeLanzarExcepcionCuandoProductoNoExiste() {
         // Arrange

@@ -178,7 +178,7 @@ class ProductoSincronizacionServiceUnitTest {
     }
 
     @Test
-    @DisplayName("4. Debe manejar colisión concurrente (DataIntegrityViolationException) sin duplicar y enviando confirmación")
+    @DisplayName("4. Debe propagar colisión UNIQUE para permitir rollback y reentrega JMS")
     void debeManejarColisionConcurrenteDeUnicidadSinFallar() {
         // Arrange
         ProductoEventMessage mensaje = new ProductoEventMessage(
@@ -208,12 +208,11 @@ class ProductoSincronizacionServiceUnitTest {
         when(productoDestinoRepository.save(any(ProductoDestino.class)))
                 .thenThrow(new DataIntegrityViolationException("uk_producto_prod_codigo duplicate key"));
 
-        // Act
-        ProductoDestino resultado = sincronizacionService.sincronizarProducto(mensaje);
+        // Al colisionar, Spring debe revertir la transacción y JMS reentregar.
+        assertThatThrownBy(() -> sincronizacionService.sincronizarProducto(mensaje))
+                .isInstanceOf(DataIntegrityViolationException.class);
 
-        // Assert
-        assertThat(resultado.getId()).isEqualTo(910L);
-        verify(notificacionJmsPublisher).publicarConfirmacionDePersistencia(any(ProductoNotificacionMessage.class));
+        verifyNoInteractions(notificacionJmsPublisher);
     }
 
     @Test

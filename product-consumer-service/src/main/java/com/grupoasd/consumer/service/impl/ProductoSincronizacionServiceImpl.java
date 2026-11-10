@@ -8,9 +8,10 @@ import com.grupoasd.consumer.repository.ProductoDestinoRepository;
 import com.grupoasd.consumer.service.ProductoSincronizacionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -60,21 +61,18 @@ public class ProductoSincronizacionServiceImpl implements ProductoSincronizacion
                     LocalDateTime.now()
             );
 
-            try {
-                productoPersistido = productoDestinoRepository.save(nuevoDestino);
+            // No capturar aquí una violación UNIQUE: PostgreSQL deja la transacción
+            // en estado fallido. Hay que propagar el error para que Spring revierta
+            // la transacción y ActiveMQ reentregue el mensaje. En el reintento,
+            // la consulta inicial reconocerá el producto insertado por el otro hilo.
+            productoPersistido = productoDestinoRepository.save(nuevoDestino);
 
-                log.info("[COMPONENTE 2][RESULTADO: PERSISTIDO OK] Producto almacenado automáticamente en grupoasd_prod.producto -> idDestino={}, idOrigen={}, codigo='{}', nombre='{}', precio={}",
-                        productoPersistido.getId(),
-                        productoPersistido.getIdOrigen(),
-                        productoPersistido.getCodigo(),
-                        productoPersistido.getNombre(),
-                        productoPersistido.getPrecio());
-            } catch (DataIntegrityViolationException ex) {
-                productoPersistido = productoDestinoRepository.findByCodigoIgnoreCase(codigoNormalizado)
-                        .orElseThrow(() -> ex);
-                log.info("[COMPONENTE 2][RESULTADO: DUPLICADO CONCURRENTE OMITIDO] El producto codigo='{}' fue insertado concurrentemente (idDestino={}). Se reutiliza registro existente.",
-                        codigoNormalizado, productoPersistido.getId());
-            }
+            log.info("[COMPONENTE 2][RESULTADO: PERSISTIDO OK] Producto almacenado automáticamente en grupoasd_prod.producto -> idDestino={}, idOrigen={}, codigo='{}', nombre='{}', precio={}",
+                    productoPersistido.getId(),
+                    productoPersistido.getIdOrigen(),
+                    productoPersistido.getCodigo(),
+                    productoPersistido.getNombre(),
+                    productoPersistido.getPrecio());
         }
 
         ProductoNotificacionMessage confirmacion = new ProductoNotificacionMessage(
@@ -85,7 +83,21 @@ public class ProductoSincronizacionServiceImpl implements ProductoSincronizacion
                 productoPersistido.getFechaSincronizacion()
         );
 
-        notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+        // La notificación solo debe salir después de confirmar la transacción de BD.
+        // Si falla JMS tras el commit, el listener JMS puede reentregar el mensaje;
+        // el consumidor idempotente responderá con una nueva confirmación.
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+                && TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+                }
+            });
+        } else {
+            // Mantiene compatibilidad con pruebas unitarias que invocan el servicio sin Spring.
+            notificacionJmsPublisher.publicarConfirmacionDePersistencia(confirmacion);
+        }
 
         return productoPersistido;
     }
