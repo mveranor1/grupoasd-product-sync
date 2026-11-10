@@ -154,3 +154,37 @@ docker run --rm -e CONCURRENCY_TEST_DB_URL=jdbc:postgresql://host.docker.interna
 6. Diagramas existentes de arquitectura y flujo de mensajes.
 7. Revisión del PR y confirmación de la rama que se entregará.
 
+
+## 9. Capturas visuales incorporadas
+
+Las siguientes imágenes fueron incorporadas al repositorio en la rama de correcciones. Se referencian desde este informe para facilitar la revisión de las evidencias junto con su explicación.
+
+### Evidencia 1. Servicios Docker Compose
+
+![Estado de los cuatro contenedores Docker Compose](01-docker-contenedores.png)
+
+Muestra el resultado de `docker compose ps` y el estado del entorno.
+
+### Evidencia 2. Publicador: origen y confirmación
+
+![Consulta Swagger en el microservicio publicador](02-swagger-publicador.png)
+
+Permite revisar el producto por código, con `publicado=true` y `notificado=true`.
+
+### Evidencia 3. Consumidor: persistencia en destino
+
+![Consulta Swagger en el microservicio consumidor](03-swagger-consumidor.png)
+
+Permite verificar la persistencia y la referencia `idOrigen`.
+
+### Evidencia 4. Suite general Maven
+
+![Ejecución general de pruebas Maven](04-maven-build-success.png)
+
+Muestra el resultado de la verificación automatizada de los módulos.
+
+### Evidencia 5. Concurrencia JMS
+
+![Prueba de concurrencia y reentrega JMS](05-jms-concurrencia.png)
+
+Muestra el resultado de la prueba de dos consumidores JMS y el broker de pruebas.
